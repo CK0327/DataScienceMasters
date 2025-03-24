@@ -1,0 +1,162 @@
+---
+title: "NYPD Shooting Incident Analysis"
+author: "Chris Kaldrovics"
+date: "2025-03-22"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+#### Welcome to My Data Analysis on NYPD Shooting Incidents! We are going to explore some great views and then see if we can find a correlation in the data! 
+
+#### Load data from the URL
+##### The first step is to load our dataset in and then do some exploration!
+```{r}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+data <- read_csv(url)
+```
+
+## Show the head of the dataset!
+
+
+##### Lets first look at our data to conclude what we need and don't need in order to continue an anlaysis of year over year trends, incidents based on location, and create a model to explore a possible correlation between Hour of Day and a shooting involving a Murder!
+```{r}
+head(data)
+```
+#### Now we will start by creating some new columns!
+
+
+## Convert date fields and create new columns!
+```{r, echo=TRUE}
+data <- data %>%
+  mutate(
+    OCCUR_DATE = mdy(OCCUR_DATE), 
+    Year = year(OCCUR_DATE),  
+    Hour_of_Day = as.integer(substr(OCCUR_TIME, 1, 2)),
+    STATISTICAL_MURDER_FLAG = if_else(STATISTICAL_MURDER_FLAG, 1, 0)  
+  ) %>%
+  filter(!is.na(STATISTICAL_MURDER_FLAG))  
+
+
+```
+##### The R code above is first making sure we are in date format and then we are extracting Year to see trend over time in years. After I created a new column called "Hour_of_Day" which gives us an integer that is the hour of the day between 1 and 23. Lastly I made STATISTICAL_MURDER_FLAG BOOLEAN into numbers 1 and 0. 
+
+
+
+
+
+
+
+### Clean Up our data to include only columns we are utilizing!
+```{r,echo = TRUE}
+data <- data %>%
+  select(INCIDENT_KEY, OCCUR_DATE, Year, OCCUR_TIME, Hour_of_Day, BORO, STATISTICAL_MURDER_FLAG)
+head(data)
+```
+
+##### Aggregate data to count incidents per borough
+```{r,echo=TRUE}
+borough_incidents <- data %>%
+  group_by(BORO) %>%
+  summarise(n = n(), .groups = 'drop')  # n() counts the number of rows for each group, drop prevents grouping in the result
+
+```
+
+
+
+## Visualizing the number of incidents by location
+
+#### Where Do Most Shootings Happen in New York in 2010-2023? 
+
+```{r plotting_location}
+ggplot(borough_incidents, aes(x = reorder(BORO, -n), y = n, fill = BORO)) +
+  geom_col() +
+  labs(title = "Number of Incidents by Borough(2006-2023)", x = "Borough", y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Prep yearly_data
+
+```{r}
+yearly_data <- data %>%
+  group_by(Year) %>%
+  summarise(n = n(), .groups = 'drop')  # Summarise counts incidents per year
+```
+
+
+
+## Trend of Incidents(2006-2023)
+
+##### What does the trend of shootings look like? Is New York doing a better job at preventing Gun Violence over time? 
+
+```{r plotting_yearly_trends,echo=FALSE}
+ggplot(yearly_data, aes(x = Year, y = n, group = 1)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "", x = "Year", y = "Number of Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+##### As we can see in the Plot above, the trend was going down year over year until 2019 when wee see a massive spike and then it dips back down in 2023. Explanation of these movements would require much deeper analysis on Policies in these locations during these times. 
+
+
+## MODEL: Logistic Regression Analysis
+
+##### Let's see if there is any correlation with the hour a shooting takes place and if it is classified as a murder or not. 
+
+##### The Data Dictionary for this dataset Defines STATISTICAL_MURDER_FLAG: "Shooting resulted in the victim’s death which would be counted as a murder"
+
+```{r,echo=TRUE}
+# Check for NA values and remove if necessary
+data1 <- na.omit(data[, c("STATISTICAL_MURDER_FLAG", "Hour_of_Day")])
+# fit model
+model <- glm(STATISTICAL_MURDER_FLAG ~ Hour_of_Day, data = data1, family = binomial())
+
+# Display the summary
+summary(model)
+
+```
+
+##### As we can see above the Model produces a p-value = 0.509 for Hour_of_Day. This is quite high indicating that the Hour of Day is not statistically significant in wether a shooting incident leads to a murder or not.However, Below I have Visualized these variables to show that they indeed do show a different story. At later times in the day there are more murders however this is bias. 
+
+## BIAS
+
+##### More Murders are occuring at night because there are more shootings at night.
+##### The main reason for bias in this data is omitted variables regarding more information on why the shooting occured - wether it was random or not. Wether it was gang affiliated or not. Additional information like this would allow for a more robust analysis. Also a lack of data - the dataset could be larger. 
+
+## PERSONAL BIAS
+
+##### My personal bias includes trying to show a correlation of these two specifc data points is bias in itself due to my decision to do so.
+
+
+## VISUALIZING THE MODEL'S DATA
+
+```{r,echo=TRUE}
+
+hourly_murders <- data %>%
+  group_by(Hour_of_Day) %>%
+  summarise(Sum_Murders = sum(STATISTICAL_MURDER_FLAG, na.rm = TRUE))  # na.rm=TRUE to handle any NAs safely
+
+ggplot(hourly_murders, aes(x = Hour_of_Day, y = Sum_Murders)) +
+  geom_col(fill = "steelblue") + 
+  labs(title = "Murder Count by Hour of Day",
+       x = "Hour of Day",
+       y = "Murder Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+
+```
+
+##### In the above Visualization we can see that Murders tend to occur in the late hours of the day or the early mornings. This visual shows that even though a direct correlation is not concluded we can understand that shootings and therefore murders from shootings occur more at night then during the day!
+
+
