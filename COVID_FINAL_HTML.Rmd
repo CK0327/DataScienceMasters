@@ -1,0 +1,144 @@
+
+---
+title: "COVID_FINAL"
+author: "Chris Kaldrovics"
+date: "2025-03-24"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+## Data Import and Clean Up
+
+This is where I loaded in my Data and Cleaned it: 
+To do so I loaded in via URL and file names. I then concatenated the two and read in the csv files from those links to create some tables:
+
+global_cases
+global_deaths
+US_cases
+US_deaths
+
+```{r,echo=FALSE}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_US.csv",  "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv",  "time_series_covid19_deaths_global.csv")
+
+urls <- str_c(url_in,file_names)
+
+US_cases <- read_csv(urls[1])
+global_cases <-read_csv(urls[2])
+US_deaths <-read_csv(urls[3])
+global_deaths<-read_csv(urls[4])
+```
+
+After Loading My data in I cleaned it and trimmed it down for Analysis Ultimately creating a table called global where I will delve deeper into the data. 
+I created a table called global and then looked at the summary of that table to define changes necessary for analysis
+
+```{r,echo=TRUE}
+global_cases <- global_cases %>%
+     pivot_longer(cols = -c('Province/State',
+                            'Country/Region',Lat,Long),
+                  names_to = "date",
+                  values_to = "cases") %>%
+     select(-c(Lat,Long))
+global_deaths <- global_deaths %>%
+     pivot_longer(cols = -c('Province/State',
+                            'Country/Region',Lat,Long),
+                  names_to = "date",
+                  values_to = "deaths") %>%
+     select(-c(Lat,Long))
+global <- global_cases %>%
+  full_join(global_deaths) %>%
+  rename(Country_Region = 'Country/Region',
+          Province_State = 'Province/State') %>%
+  mutate(date = mdy(date))
+ 
+
+summary(global)
+```
+After that summary I decided it is best to filter out rows that have 0 cases and check to ensure the rest of the data is accurate. 
+```{r,echo=FALSE}
+global<-global %>% filter(cases > 0)
+global %>% filter(cases > 28000000)
+```
+# Analysis and Visualizations
+Now my data is ready for some visuals and a model! 
+
+## COVID_19 DEATHS 
+```{r, echo=FALSE}
+# Find the top 5 countries based on total deaths
+top_deaths_countries <- global %>%
+  group_by(Country_Region) %>%
+  summarise(Max_Deaths = max(deaths), .groups = 'drop') %>%
+  top_n(5, Max_Deaths)
+# Plotting the bar chart
+ggplot(top_deaths_countries, aes(x = reorder(Country_Region, Max_Deaths), y = Max_Deaths, fill = Country_Region)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 5 Countries by Total COVID-19 Deaths",
+       x = "Country/Region",
+       y = "Maximum Deaths") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+The above plot tells us that covid had the biggest impact in these countries especially the United States. 
+
+# The US Covid Cases Over Time
+How many people got sick in the United States?
+```{r,echo=FALSE}
+
+
+# Assuming your data frame is named 'global'
+us_cases_over_time <- global %>%
+  filter(Country_Region == "US") %>%
+  arrange(date) %>%
+  select(date, cases)  # Assuming 'cases' is the cumulative cases field
+
+# View the data structure
+head(us_cases_over_time)
+ggplot(us_cases_over_time, aes(x = as.Date(date), y = cases)) +
+  geom_line(color = "blue") +
+  labs(title = "Cumulative COVID-19 Cases in the US Over Time",
+       x = "Date",
+       y = "Cumulative Cases") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+The above chart shows us COVID-19 cases cumulatively in the United States.
+
+It is crazy to believe that in just a few years a virus can get 100,000,000 people sick.
+
+Some more cleaning for our model! 
+```{r,echo=FALSE}
+# Adjust the pivot_longer() function
+US_deaths_long <- US_deaths %>%
+     pivot_longer(
+         cols = -(UID:Population),  # This uses range exclusion based on your column list
+         names_to = "date",
+         values_to = "deaths"
+     )
+```
+# Model
+Do COVID 19 Deaths have to do with State Population in the United States?
+```{r,echo=TRUE}
+# Calculate the correlation coefficient
+correlation_coefficient <- cor(US_deaths_long$Population, US_deaths_long$deaths, use = "complete.obs")
+ correlation_coefficient
+
+# Perform the correlation test
+correlation_test <- cor.test(US_deaths_long$Population, US_deaths_long$deaths, method = "pearson", use = "complete.obs")
+
+# Print the results
+print(correlation_test)
+
+```
+Yes Population in certain states is Positively Correlated to COVID Deaths!
+Thanks!
